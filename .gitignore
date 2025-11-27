@@ -166,6 +166,8 @@ simple_benchmark_*.json
 # UV lock file
 uv.lock
 
+push_to_github.sh
+
 # Compiled Rust extension modules
 *.pyd
 *.so
