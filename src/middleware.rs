@@ -51,7 +51,7 @@ impl PythonMiddleware {
                 middleware
                     .getattr(py, "__class__")
                     .and_then(|cls| cls.getattr(py, "__name__"))
-                    .and_then(|name| name.extract::<String>())
+                    .and_then(|name| name.extract::<String>(py))
                     .unwrap_or_else(|_| "PythonMiddleware".to_string())
             })
         });
@@ -65,9 +65,10 @@ impl MiddlewareHandler for PythonMiddleware {
     async fn process_request(&self, request: &mut RustletteRequest) -> RustletteResult<()> {
         Python::with_gil(|py| {
             // Check if middleware has process_request method
-            if self.middleware.hasattr(py, "process_request")? {
+            if self.middleware.as_ref(py).hasattr("process_request")? {
                 let method = self.middleware.getattr(py, "process_request")?;
-                method.call1(py, (request,))?;
+                let req_py = Py::new(py, request.clone())?;
+                method.call1(py, (req_py,))?;
             }
             Ok(())
         })
@@ -86,9 +87,11 @@ impl MiddlewareHandler for PythonMiddleware {
     ) -> RustletteResult<()> {
         Python::with_gil(|py| {
             // Check if middleware has process_response method
-            if self.middleware.hasattr(py, "process_response")? {
+            if self.middleware.as_ref(py).hasattr("process_response")? {
                 let method = self.middleware.getattr(py, "process_response")?;
-                method.call1(py, (request, response))?;
+                let req_py = Py::new(py, request.clone())?;
+                let resp_py = Py::new(py, response.clone())?;
+                method.call1(py, (req_py, resp_py))?;
             }
             Ok(())
         })
@@ -107,14 +110,15 @@ impl MiddlewareHandler for PythonMiddleware {
     ) -> RustletteResult<Option<RustletteResponse>> {
         Python::with_gil(|py| {
             // Check if middleware has process_exception method
-            if self.middleware.hasattr(py, "process_exception")? {
+            if self.middleware.as_ref(py).hasattr("process_exception")? {
                 let method = self.middleware.getattr(py, "process_exception")?;
-                let result = method.call1(py, (request, exception.clone()))?;
+                let req_py = Py::new(py, request.clone())?;
+                let result = method.call1(py, (req_py, exception.clone()))?;
 
                 if result.is_none(py) {
                     Ok(None)
                 } else {
-                    let response: RustletteResponse = result.extract()?;
+                    let response: RustletteResponse = result.extract(py)?;
                     Ok(Some(response))
                 }
             } else {
@@ -327,7 +331,8 @@ impl MiddlewareHandler for SecurityHeadersMiddleware {
         }
 
         // Only set HSTS for HTTPS requests
-        if request.scheme().unwrap_or_default() == "https" {
+        let is_https = request.url.starts_with("https://");
+        if is_https {
             if let Some(max_age) = self.hsts_max_age {
                 let hsts_value = if self.hsts_include_subdomains {
                     format!("max-age={}; includeSubDomains", max_age)
@@ -427,7 +432,7 @@ impl MiddlewareHandler for TimingMiddleware {
 }
 
 /// Middleware wrapper for the Python interface
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[pyclass]
 pub struct Middleware {
     handler: Arc<dyn MiddlewareHandler>,
@@ -508,7 +513,6 @@ impl Middleware {
 }
 
 /// Middleware execution stack
-#[derive(Debug)]
 #[pyclass]
 pub struct MiddlewareStack {
     middlewares: Vec<Arc<dyn MiddlewareHandler>>,

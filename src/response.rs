@@ -60,26 +60,23 @@ impl RustletteResponse {
         let status_code = status_code.unwrap_or(200);
 
         let mut response_headers = if let Some(headers_dict) = headers {
-            Headers::from_dict(
-                Python::with_gil(|py| py.get_type::<Headers>()),
-                headers_dict,
-            )?
+            Headers::from_dict_ref(headers_dict)?
         } else {
             Headers::new()
         };
 
         let body = if let Some(content) = content {
-            Python::with_gil(|py| {
+            Some(Python::with_gil(|py| -> PyResult<Bytes> {
                 if let Ok(string_content) = content.extract::<String>(py) {
-                    Some(Bytes::from(string_content.into_bytes()))
+                    Ok(Bytes::from(string_content.into_bytes()))
                 } else if let Ok(bytes_content) = content.downcast::<PyBytes>(py) {
-                    Some(Bytes::copy_from_slice(bytes_content.as_bytes()))
+                    Ok(Bytes::copy_from_slice(bytes_content.as_bytes()))
                 } else {
                     // Try to convert to string
-                    let string_repr = content.str(py)?.extract::<String>()?;
-                    Some(Bytes::from(string_repr.into_bytes()))
+                    let string_repr = content.call_method0(py, "__str__")?.extract::<String>(py)?;
+                    Ok(Bytes::from(string_repr.into_bytes()))
                 }
-            })?
+            })?)
         } else {
             None
         };
@@ -98,7 +95,7 @@ impl RustletteResponse {
 
         let background_task = background.map(|bg| {
             Python::with_gil(|py| {
-                if bg.hasattr(py, "__call__").unwrap_or(false) {
+                if bg.as_ref(py).hasattr("__call__").unwrap_or(false) {
                     BackgroundTask::new(bg, vec![], None)
                 } else {
                     // Assume it's a BackgroundTask object
@@ -133,7 +130,7 @@ impl RustletteResponse {
             } else if let Ok(bytes_content) = content.downcast::<PyBytes>(py) {
                 Bytes::copy_from_slice(bytes_content.as_bytes())
             } else {
-                let string_repr = content.str(py)?.extract::<String>()?;
+                let string_repr = content.call_method0(py, "__str__")?.extract::<String>(py)?;
                 Bytes::from(string_repr.into_bytes())
             };
 
@@ -331,7 +328,7 @@ impl JSONResponse {
         })?;
 
         let response = RustletteResponse::new(
-            Some(json_string.into_py(Python::with_gil(|py| py))),
+            Some(Python::with_gil(|py| json_string.into_py(py))),
             status_code,
             headers,
             Some(media_type),
@@ -428,10 +425,7 @@ impl RedirectResponse {
         }
 
         let mut response_headers = if let Some(headers_dict) = headers {
-            Headers::from_dict(
-                Python::with_gil(|py| py.get_type::<Headers>()),
-                headers_dict,
-            )?
+            Headers::from_dict_ref(headers_dict)?
         } else {
             Headers::new()
         };
@@ -479,10 +473,7 @@ impl FileResponse {
         let media_type = media_type.unwrap_or_else(|| guess_media_type(&path));
 
         let mut response_headers = if let Some(headers_dict) = headers {
-            Headers::from_dict(
-                Python::with_gil(|py| py.get_type::<Headers>()),
-                headers_dict,
-            )?
+            Headers::from_dict_ref(headers_dict)?
         } else {
             Headers::new()
         };
@@ -532,7 +523,7 @@ impl StreamingResponse {
             let mut chunks = Vec::new();
 
             // Try to iterate over the content
-            if let Ok(iter) = content.iter(py) {
+            if let Ok(iter) = content.as_ref(py).iter() {
                 for item in iter {
                     let item = item?;
                     if let Ok(chunk) = item.extract::<String>() {
@@ -543,9 +534,9 @@ impl StreamingResponse {
                 }
             } else {
                 // Fallback: try to convert directly to string or bytes
-                if let Ok(string_content) = content.extract::<String>() {
+                if let Ok(string_content) = content.extract::<String>(py) {
                     chunks.extend_from_slice(string_content.as_bytes());
-                } else if let Ok(bytes_content) = content.downcast::<PyBytes>() {
+                } else if let Ok(bytes_content) = content.downcast::<PyBytes>(py) {
                     chunks.extend_from_slice(bytes_content.as_bytes());
                 }
             }
@@ -556,10 +547,7 @@ impl StreamingResponse {
         let response = RustletteResponse {
             status_code: status_code.unwrap_or(200),
             headers: if let Some(headers_dict) = headers {
-                Headers::from_dict(
-                    Python::with_gil(|py| py.get_type::<Headers>()),
-                    headers_dict,
-                )?
+                Headers::from_dict_ref(headers_dict)?
             } else {
                 Headers::new()
             },
@@ -604,7 +592,7 @@ fn python_to_json(py: Python, obj: &PyObject) -> PyResult<JsonValue> {
         Ok(JsonValue::Object(map))
     } else {
         // Fallback: convert to string
-        let string_repr = obj.str(py)?.extract::<String>()?;
+        let string_repr = obj.call_method0(py, "__str__")?.extract::<String>(py)?;
         Ok(JsonValue::String(string_repr))
     }
 }

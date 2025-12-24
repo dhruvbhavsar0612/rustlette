@@ -1,0 +1,34 @@
+# Include documentation
+include README.md
+include LICENSE
+include CHANGELOG.md
+
+# Include Rust source code
+recursive-include src *.rs
+include Cargo.toml
+include Cargo.lock
+include build.rs
+
+# Include configuration files
+include pyproject.toml
+include .gitignore
+
+# Exclude development files
+exclude .github
+recursive-exclude .github *
+exclude benchmarks
+recursive-exclude benchmarks *
+exclude examples
+recursive-exclude examples *
+exclude tests
+recursive-exclude tests *
+exclude docs
+recursive-exclude docs *
+
+# Exclude build artifacts
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude __pycache__
+global-exclude .DS_Store
+global-exclude *.so
+global-exclude target

@@ -58,7 +58,6 @@ impl Default for ServerConfig {
 }
 
 /// HTTP server for Rustlette applications
-#[derive(Debug)]
 #[pyclass]
 pub struct RustletteServer {
     app: Arc<RustletteApp>,
@@ -88,37 +87,37 @@ impl RustletteServer {
 
         // Parse additional configuration from kwargs
         if let Some(kwargs) = kwargs {
-            if let Some(workers) = kwargs.get_item("workers") {
+            if let Ok(Some(workers)) = kwargs.get_item("workers") {
                 config.workers = workers.extract()?;
             }
-            if let Some(max_connections) = kwargs.get_item("max_connections") {
+            if let Ok(Some(max_connections)) = kwargs.get_item("max_connections") {
                 config.max_connections = max_connections.extract()?;
             }
-            if let Some(keep_alive) = kwargs.get_item("keep_alive_timeout") {
+            if let Ok(Some(keep_alive)) = kwargs.get_item("keep_alive_timeout") {
                 let secs: f64 = keep_alive.extract()?;
                 config.keep_alive_timeout = Some(Duration::from_secs_f64(secs));
             }
-            if let Some(read_timeout) = kwargs.get_item("read_timeout") {
+            if let Ok(Some(read_timeout)) = kwargs.get_item("read_timeout") {
                 let secs: f64 = read_timeout.extract()?;
                 config.read_timeout = Some(Duration::from_secs_f64(secs));
             }
-            if let Some(write_timeout) = kwargs.get_item("write_timeout") {
+            if let Ok(Some(write_timeout)) = kwargs.get_item("write_timeout") {
                 let secs: f64 = write_timeout.extract()?;
                 config.write_timeout = Some(Duration::from_secs_f64(secs));
             }
-            if let Some(max_size) = kwargs.get_item("max_request_size") {
+            if let Ok(Some(max_size)) = kwargs.get_item("max_request_size") {
                 config.max_request_size = max_size.extract()?;
             }
-            if let Some(access_log) = kwargs.get_item("access_log") {
+            if let Ok(Some(access_log)) = kwargs.get_item("access_log") {
                 config.enable_access_log = access_log.extract()?;
             }
-            if let Some(gzip) = kwargs.get_item("gzip") {
+            if let Ok(Some(gzip)) = kwargs.get_item("gzip") {
                 config.enable_gzip = gzip.extract()?;
             }
-            if let Some(ssl_cert) = kwargs.get_item("ssl_cert") {
+            if let Ok(Some(ssl_cert)) = kwargs.get_item("ssl_cert") {
                 config.ssl_cert_path = ssl_cert.extract()?;
             }
-            if let Some(ssl_key) = kwargs.get_item("ssl_key") {
+            if let Ok(Some(ssl_key)) = kwargs.get_item("ssl_key") {
                 config.ssl_key_path = ssl_key.extract()?;
             }
         }
@@ -131,38 +130,44 @@ impl RustletteServer {
     }
 
     /// Start the server
-    pub fn serve(&self) -> PyResult<()> {
-        Python::with_gil(|py| {
-            let server = self.clone();
-            pyo3_asyncio::tokio::future_into_py(py, async move { server.run().await })
+    pub fn serve<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
+        let server = self.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            server
+                .run()
+                .await
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
         })
     }
 
     /// Start the server with automatic reload (development mode)
-    pub fn serve_with_reload(&self, reload_dirs: Option<Vec<String>>) -> PyResult<()> {
-        Python::with_gil(|py| {
-            let server = self.clone();
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                // For now, just run normally
-                // In a full implementation, this would watch files and reload
-                warn!("Auto-reload not yet implemented, running normally");
-                server.run().await
-            })
+    pub fn serve_with_reload<'py>(
+        &self,
+        py: Python<'py>,
+        reload_dirs: Option<Vec<String>>,
+    ) -> PyResult<&'py PyAny> {
+        let server = self.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            // For now, just run normally
+            // In a full implementation, this would watch files and reload
+            warn!("Auto-reload not yet implemented, running normally");
+            server
+                .run()
+                .await
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
         })
     }
 
     /// Stop the server gracefully
-    pub fn shutdown(&self) -> PyResult<()> {
-        Python::with_gil(|py| {
-            let shutdown_signal = self.shutdown_signal.clone();
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                let mut signal = shutdown_signal.write().await;
-                if let Some(sender) = signal.take() {
-                    let _ = sender.send(());
-                    info!("Server shutdown signal sent");
-                }
-                Ok(())
-            })
+    pub fn shutdown<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
+        let shutdown_signal = self.shutdown_signal.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut signal = shutdown_signal.write().await;
+            if let Some(sender) = signal.take() {
+                let _ = sender.send(());
+                info!("Server shutdown signal sent");
+            }
+            Ok(())
         })
     }
 
@@ -446,7 +451,10 @@ pub mod dev {
 
         // TODO: Implement file watching for hot reload
         info!("Development server starting (hot reload not yet implemented)");
-        server.run().await?;
+        server
+            .run()
+            .await
+            .map_err(|e| RustletteError::internal_error(e.to_string()))?;
 
         Ok(())
     }
@@ -519,7 +527,10 @@ pub mod prod {
             "Production server starting with {} workers",
             prod_config.workers
         );
-        server.run().await?;
+        server
+            .run()
+            .await
+            .map_err(|e| RustletteError::internal_error(e.to_string()))?;
 
         Ok(())
     }

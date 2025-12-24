@@ -5,30 +5,35 @@ build-backend = "maturin"
 [project]
 name = "rustlette"
 version = "0.1.0"
-description = "High-performance Python web framework with Rust internals"
+description = "High-performance Python web framework with Rust internals - Starlette-compatible API with Rust speed"
 authors = [
-    {name = "Rustlette Team", email = "team@rustlette.dev"},
+    {name = "Rustlette Team", email = "rustlette@example.com"},
 ]
 license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Framework :: AsyncIO",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Rust",
+    "Topic :: Internet :: WWW/HTTP",
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
-    "Topic :: Internet :: WWW/HTTP :: WSGI :: Application",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-keywords = ["web", "framework", "async", "rust", "performance", "starlette"]
+keywords = ["web", "framework", "async", "rust", "performance", "starlette", "fastapi", "asgi", "http"]
 dependencies = [
     "typing-extensions>=4.0.0",
 ]
@@ -52,14 +57,18 @@ test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/rustlette/rustlette"
-Documentation = "https://rustlette.readthedocs.io/"
-Repository = "https://github.com/rustlette/rustlette"
-"Bug Tracker" = "https://github.com/rustlette/rustlette/issues"
+Homepage = "https://github.com/yourusername/rustlette"
+Documentation = "https://github.com/yourusername/rustlette#readme"
+Repository = "https://github.com/yourusername/rustlette"
+"Bug Tracker" = "https://github.com/yourusername/rustlette/issues"
+Changelog = "https://github.com/yourusername/rustlette/releases"
 
 [tool.maturin]
+python-source = "python"
 module-name = "rustlette._rustlette_core"
 features = ["pyo3/extension-module"]
+bindings = "pyo3"
+compatibility = "linux"
 
 [tool.black]
 line-length = 88

@@ -1,0 +1,34 @@
+name: Greetings
+
+on: [pull_request_target, issues]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  greeting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/first-interaction@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-message: |
+            👋 Thanks for opening your first issue in Rustlette! 
+            
+            A maintainer will review it and get back to you soon. In the meantime:
+            - Make sure you've provided enough details
+            - Check if there are any similar issues
+            - Join our discussions to chat with the community
+            
+            We appreciate your contribution! 🎉
+          pr-message: |
+            🎉 Thank you for your first pull request to Rustlette!
+            
+            Please make sure:
+            - [ ] Code follows our style guidelines
+            - [ ] Tests pass (`cargo test`)
+            - [ ] Documentation is updated (if needed)
+            - [ ] CHANGELOG.md is updated (if needed)
+            
+            A maintainer will review your PR soon. Thanks for contributing! 🚀

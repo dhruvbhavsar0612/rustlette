@@ -45,7 +45,7 @@ impl BackgroundTask {
         let name = name.unwrap_or_else(|| {
             Python::with_gil(|py| {
                 func.getattr(py, "__name__")
-                    .and_then(|n| n.extract::<String>())
+                    .and_then(|n| n.extract::<String>(py))
                     .unwrap_or_else(|_| "BackgroundTask".to_string())
             })
         });
@@ -143,7 +143,7 @@ impl BackgroundTask {
             id: uuid::Uuid::new_v4().to_string(),
             name: Python::with_gil(|py| {
                 func.getattr(py, "__name__")
-                    .and_then(|n| n.extract::<String>())
+                    .and_then(|n| n.extract::<String>(py))
                     .unwrap_or_else(|_| "BackgroundTask".to_string())
             }),
             func,
@@ -357,96 +357,86 @@ impl BackgroundTaskManager {
     }
 
     /// Start the background task manager
-    pub fn start(&self) -> PyResult<()> {
-        Python::with_gil(|py| {
-            let queue = Arc::clone(&self.queue);
-            let num_workers = self.num_workers;
+    pub fn start<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
+        let queue = Arc::clone(&self.queue);
+        let num_workers = self.num_workers;
 
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                let mut queue_guard = queue.lock().await;
-                if queue_guard.is_none() {
-                    let mut task_queue = TaskQueue::new(num_workers);
-                    task_queue
-                        .start()
-                        .await
-                        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-                    *queue_guard = Some(task_queue);
-                }
-                Ok(())
-            })
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut queue_guard = queue.lock().await;
+            if queue_guard.is_none() {
+                let mut task_queue = TaskQueue::new(num_workers);
+                task_queue
+                    .start()
+                    .await
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+                *queue_guard = Some(task_queue);
+            }
+            Ok(())
         })
     }
 
     /// Stop the background task manager
-    pub fn stop(&self) -> PyResult<()> {
-        Python::with_gil(|py| {
-            let queue = Arc::clone(&self.queue);
+    pub fn stop<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
+        let queue = Arc::clone(&self.queue);
 
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                let mut queue_guard = queue.lock().await;
-                if let Some(mut task_queue) = queue_guard.take() {
-                    task_queue
-                        .stop()
-                        .await
-                        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-                }
-                Ok(())
-            })
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut queue_guard = queue.lock().await;
+            if let Some(mut task_queue) = queue_guard.take() {
+                task_queue
+                    .stop()
+                    .await
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+            }
+            Ok(())
         })
     }
 
     /// Add a background task
-    pub fn add_task(&self, task: BackgroundTask) -> PyResult<()> {
-        Python::with_gil(|py| {
-            let queue = Arc::clone(&self.queue);
+    pub fn add_task<'py>(&self, py: Python<'py>, task: BackgroundTask) -> PyResult<&'py PyAny> {
+        let queue = Arc::clone(&self.queue);
 
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                let queue_guard = queue.lock().await;
-                if let Some(ref task_queue) = *queue_guard {
-                    task_queue
-                        .enqueue(task)
-                        .await
-                        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-                } else {
-                    return Err(pyo3::exceptions::PyRuntimeError::new_err(
-                        "Background task manager not started",
-                    ));
-                }
-                Ok(())
-            })
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let queue_guard = queue.lock().await;
+            if let Some(ref task_queue) = *queue_guard {
+                task_queue
+                    .enqueue(task)
+                    .await
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+            } else {
+                return Err(pyo3::exceptions::PyRuntimeError::new_err(
+                    "Background task manager not started",
+                ));
+            }
+            Ok(())
         })
     }
 
     /// Get the number of pending tasks
-    pub fn pending_count(&self) -> PyResult<usize> {
-        Python::with_gil(|py| {
-            let queue = Arc::clone(&self.queue);
+    pub fn pending_count<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
+        let queue = Arc::clone(&self.queue);
 
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                let queue_guard = queue.lock().await;
-                if let Some(ref task_queue) = *queue_guard {
-                    Ok(task_queue.pending_count().await)
-                } else {
-                    Ok(0)
-                }
-            })
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let queue_guard = queue.lock().await;
+            if let Some(ref task_queue) = *queue_guard {
+                Ok(task_queue.pending_count().await)
+            } else {
+                Ok(0)
+            }
         })
     }
 
     /// Check if the manager is running
     #[getter]
-    pub fn is_running(&self) -> PyResult<bool> {
-        Python::with_gil(|py| {
-            let queue = Arc::clone(&self.queue);
+    pub fn is_running<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
+        let queue = Arc::clone(&self.queue);
 
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                let queue_guard = queue.lock().await;
-                if let Some(ref task_queue) = *queue_guard {
-                    Ok(task_queue.is_running().await)
-                } else {
-                    Ok(false)
-                }
-            })
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let queue_guard = queue.lock().await;
+            if let Some(ref task_queue) = *queue_guard {
+                Ok(task_queue.is_running().await)
+            } else {
+                Ok(false)
+            }
         })
     }
 

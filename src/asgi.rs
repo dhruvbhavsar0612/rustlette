@@ -9,7 +9,7 @@ use crate::response::RustletteResponse;
 use crate::types::{HTTPMethod, Headers};
 use bytes::Bytes;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyTuple};
+use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -90,8 +90,9 @@ impl ASGIScope {
 
         let http_version: String = scope
             .get_item("http_version")?
-            .unwrap_or_else(|| "1.1".into_py(scope.py()))
-            .extract()?;
+            .map(|v| v.extract())
+            .transpose()?
+            .unwrap_or_else(|| "1.1".to_string());
 
         let method: String = scope
             .get_item("method")?
@@ -100,8 +101,9 @@ impl ASGIScope {
 
         let scheme: String = scope
             .get_item("scheme")?
-            .unwrap_or_else(|| "http".into_py(scope.py()))
-            .extract()?;
+            .map(|v| v.extract())
+            .transpose()?
+            .unwrap_or_else(|| "http".to_string());
 
         let path: String = scope
             .get_item("path")?
@@ -110,23 +112,27 @@ impl ASGIScope {
 
         let raw_path: Vec<u8> = scope
             .get_item("raw_path")?
-            .unwrap_or_else(|| path.as_bytes().into_py(scope.py()))
-            .extract()?;
+            .map(|v| v.extract())
+            .transpose()?
+            .unwrap_or_else(|| path.as_bytes().to_vec());
 
         let query_string: Vec<u8> = scope
             .get_item("query_string")?
-            .unwrap_or_else(|| Vec::<u8>::new().into_py(scope.py()))
-            .extract()?;
+            .map(|v| v.extract())
+            .transpose()?
+            .unwrap_or_else(|| Vec::new());
 
         let root_path: String = scope
             .get_item("root_path")?
-            .unwrap_or_else(|| "".into_py(scope.py()))
-            .extract()?;
+            .map(|v| v.extract())
+            .transpose()?
+            .unwrap_or_else(|| String::new());
 
         let headers: Vec<(Vec<u8>, Vec<u8>)> = scope
             .get_item("headers")?
-            .unwrap_or_else(|| Vec::<(Vec<u8>, Vec<u8>)>::new().into_py(scope.py()))
-            .extract()?;
+            .map(|v| v.extract())
+            .transpose()?
+            .unwrap_or_else(|| Vec::new());
 
         let server: Option<(String, u16)> =
             scope.get_item("server")?.map(|s| s.extract()).transpose()?;
@@ -254,12 +260,12 @@ impl ASGIReceive {
             let result = self.receive.call0(py)?;
 
             // If this is a coroutine, await it
-            if result.hasattr(py, "__await__")? {
+            if result.as_ref(py).hasattr("__await__")? {
                 // For now, we'll treat this as a regular dict
                 // In a full implementation, this would properly await the coroutine
-                self.parse_message(result.downcast::<PyDict>()?)
+                self.parse_message(result.downcast::<PyDict>(py)?)
             } else {
-                self.parse_message(result.downcast::<PyDict>()?)
+                self.parse_message(result.downcast::<PyDict>(py)?)
             }
         })
     }
@@ -274,13 +280,15 @@ impl ASGIReceive {
             "http.request" => {
                 let body: Vec<u8> = message
                     .get_item("body")?
-                    .unwrap_or_else(|| Vec::<u8>::new().into_py(message.py()))
-                    .extract()?;
+                    .map(|v| v.extract())
+                    .transpose()?
+                    .unwrap_or_else(|| Vec::new());
 
                 let more_body: bool = message
                     .get_item("more_body")?
-                    .unwrap_or_else(|| false.into_py(message.py()))
-                    .extract()?;
+                    .map(|v| v.extract())
+                    .transpose()?
+                    .unwrap_or(false);
 
                 Ok(ASGIMessage::HTTPRequestBody { body, more_body })
             }
@@ -300,8 +308,9 @@ impl ASGIReceive {
             "websocket.disconnect" => {
                 let code: u16 = message
                     .get_item("code")?
-                    .unwrap_or_else(|| 1000u16.into_py(message.py()))
-                    .extract()?;
+                    .map(|v| v.extract())
+                    .transpose()?
+                    .unwrap_or(1000u16);
 
                 Ok(ASGIMessage::WebSocketDisconnect { code })
             }
@@ -396,21 +405,25 @@ impl ASGIApp {
 
     /// ASGI application callable
     #[pyo3(name = "__call__")]
-    pub fn call(&self, scope: &PyDict, receive: PyObject, send: PyObject) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
-            // Parse the ASGI scope
-            let asgi_scope = ASGIScope::from_python(scope)?;
+    pub fn call<'py>(
+        &self,
+        py: Python<'py>,
+        scope: &PyDict,
+        receive: PyObject,
+        send: PyObject,
+    ) -> PyResult<&'py PyAny> {
+        // Parse the ASGI scope
+        let asgi_scope = ASGIScope::from_python(scope)?;
 
-            match asgi_scope.scope_type.as_str() {
-                "http" => self.handle_http_request(py, asgi_scope, receive, send),
-                "websocket" => self.handle_websocket(py, asgi_scope, receive, send),
-                "lifespan" => self.handle_lifespan(py, asgi_scope, receive, send),
-                _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "Unsupported ASGI scope type: {}",
-                    asgi_scope.scope_type
-                ))),
-            }
-        })
+        match asgi_scope.scope_type.as_str() {
+            "http" => self.handle_http_request(py, asgi_scope, receive, send),
+            "websocket" => self.handle_websocket(py, asgi_scope, receive, send),
+            "lifespan" => self.handle_lifespan(py, asgi_scope, receive, send),
+            _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unsupported ASGI scope type: {}",
+                asgi_scope.scope_type
+            ))),
+        }
     }
 
     fn __repr__(&self) -> String {
@@ -419,13 +432,15 @@ impl ASGIApp {
 }
 
 impl ASGIApp {
-    fn handle_http_request(
+    fn handle_http_request<'py>(
         &self,
-        py: Python,
+        py: Python<'py>,
         scope: ASGIScope,
         receive: PyObject,
         send: PyObject,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<&'py PyAny> {
+        let app = self.app.clone();
+
         // Create future/coroutine for async execution
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let asgi_receive = ASGIReceive::new(receive);
@@ -453,41 +468,86 @@ impl ASGIApp {
                 }
             }
 
-            // Build the Rustlette request
-            let request = self.build_request_from_scope(scope, body_parts)?;
+            // Build the Rustlette request from scope
+            let request = Python::with_gil(|py| {
+                let headers_dict = PyDict::new(py);
+                for (name, value) in &scope.headers {
+                    let name_str = String::from_utf8_lossy(name);
+                    let value_str = String::from_utf8_lossy(value);
+                    headers_dict.set_item(name_str.as_ref(), value_str.as_ref())?;
+                }
+
+                let body_bytes = if body_parts.is_empty() {
+                    None
+                } else {
+                    Some(pyo3::types::PyBytes::new(py, &body_parts))
+                };
+
+                let url = scope.build_url();
+                RustletteRequest::new(scope.method, url, Some(headers_dict), body_bytes, None)
+            })?;
 
             // Process the request through the app
-            let response = self.process_request(request).await?;
+            let response = Python::with_gil(|py| -> PyResult<RustletteResponse> {
+                let result = app.call1(py, (request,))?;
+                result.extract::<RustletteResponse>(py)
+            })?;
 
             // Send the response
-            self.send_response(asgi_send, response).await?;
+            Python::with_gil(|py| -> PyResult<()> {
+                let response_dict = PyDict::new(py);
+                response_dict.set_item("type", "http.response.start")?;
+                response_dict.set_item("status", response.status_code)?;
+
+                let headers_list = PyList::new(py, Vec::<(Vec<u8>, Vec<u8>)>::new());
+                for key in response.headers.keys() {
+                    if let Some(value) = response.headers.get(&key) {
+                        headers_list
+                            .append((key.as_bytes().to_vec(), value.as_bytes().to_vec()))?;
+                    }
+                }
+                response_dict.set_item("headers", headers_list)?;
+
+                asgi_send.send.call1(py, (response_dict,))?;
+
+                let body_obj = response.body(py)?;
+                if !body_obj.is_none(py) {
+                    let body_bytes = body_obj.extract::<Vec<u8>>(py)?;
+                    let body_dict = PyDict::new(py);
+                    body_dict.set_item("type", "http.response.body")?;
+                    body_dict.set_item("body", PyBytes::new(py, &body_bytes))?;
+                    asgi_send.send.call1(py, (body_dict,))?;
+                }
+
+                Ok(())
+            })?;
 
             Ok(())
         })
     }
 
-    fn handle_websocket(
+    fn handle_websocket<'py>(
         &self,
-        py: Python,
+        py: Python<'py>,
         _scope: ASGIScope,
         _receive: PyObject,
         _send: PyObject,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<&'py PyAny> {
         // WebSocket support would be implemented here
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_asyncio::tokio::future_into_py::<_, ()>(py, async move {
             Err(pyo3::exceptions::PyNotImplementedError::new_err(
                 "WebSocket support not yet implemented",
             ))
         })
     }
 
-    fn handle_lifespan(
+    fn handle_lifespan<'py>(
         &self,
-        py: Python,
+        py: Python<'py>,
         _scope: ASGIScope,
         receive: PyObject,
         send: PyObject,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<&'py PyAny> {
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let asgi_receive = ASGIReceive::new(receive);
             let asgi_send = ASGISend::new(send);
@@ -499,15 +559,14 @@ impl ASGIApp {
                         // Lifespan startup
                         // TODO: Call app startup handlers
 
-                        let response = Python::with_gil(|py| {
+                        Python::with_gil(|py| -> PyResult<()> {
                             let dict = PyDict::new(py);
                             dict.set_item("type", "lifespan.startup.complete")?;
-                            Ok::<PyObject, PyErr>(dict.into())
-                        })?;
+                            let response: PyObject = dict.into();
 
-                        asgi_send
-                            .send
-                            .call1(Python::with_gil(|py| py), (response,))?;
+                            asgi_send.send.call1(py, (response,))?;
+                            Ok(())
+                        })?;
                     }
                     _ => break,
                 }
@@ -525,9 +584,9 @@ impl ASGIApp {
         Python::with_gil(|py| {
             // Convert headers
             let headers_dict = PyDict::new(py);
-            for (name, value) in scope.headers {
-                let name_str = String::from_utf8_lossy(&name);
-                let value_str = String::from_utf8_lossy(&value);
+            for (name, value) in &scope.headers {
+                let name_str = String::from_utf8_lossy(name);
+                let value_str = String::from_utf8_lossy(value);
                 headers_dict.set_item(name_str.as_ref(), value_str.as_ref())?;
             }
 
@@ -551,7 +610,7 @@ impl ASGIApp {
             let result = self.app.call1(py, (request,))?;
 
             // Extract the response
-            result.extract::<RustletteResponse>()
+            result.extract::<RustletteResponse>(py)
         })
     }
 

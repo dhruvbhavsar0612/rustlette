@@ -3,8 +3,8 @@
 //! This module defines the error types used throughout the Rustlette framework
 //! and provides conversions to Python exceptions.
 
-use pyo3::prelude::*;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
+use pyo3::prelude::*;
 use std::fmt;
 
 /// Result type alias for Rustlette operations
@@ -12,7 +12,7 @@ pub type RustletteResult<T> = Result<T, RustletteError>;
 
 /// Main error type for Rustlette operations
 #[derive(Debug, Clone)]
-#[pyclass(extends=PyException)]
+#[pyclass]
 pub struct RustletteError {
     #[pyo3(get)]
     pub message: String,

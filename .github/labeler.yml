@@ -1,0 +1,46 @@
+# Configuration for labeler - https://github.com/actions/labeler
+
+# Documentation
+documentation:
+  - changed-files:
+    - any-glob-to-any-file: ['docs/**/*', '*.md', 'README*']
+
+# Dependencies
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file: ['Cargo.toml', 'Cargo.lock', 'pyproject.toml']
+
+# Tests
+tests:
+  - changed-files:
+    - any-glob-to-any-file: ['tests/**/*', 'src/**/test*.rs']
+
+# CI/CD
+ci:
+  - changed-files:
+    - any-glob-to-any-file: ['.github/**/*']
+
+# Core
+core:
+  - changed-files:
+    - any-glob-to-any-file: ['src/app.rs', 'src/lib.rs']
+
+# Routing
+routing:
+  - changed-files:
+    - any-glob-to-any-file: ['src/routing.rs']
+
+# Middleware
+middleware:
+  - changed-files:
+    - any-glob-to-any-file: ['src/middleware.rs']
+
+# ASGI
+asgi:
+  - changed-files:
+    - any-glob-to-any-file: ['src/asgi.rs']
+
+# Performance
+performance:
+  - changed-files:
+    - any-glob-to-any-file: ['benches/**/*']

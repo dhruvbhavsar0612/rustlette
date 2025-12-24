@@ -1,0 +1,69 @@
+# Set default behavior to normalize line endings
+* text=auto
+
+# Rust files
+*.rs text eol=lf
+*.toml text eol=lf
+
+# Python files
+*.py text eol=lf
+*.pyi text eol=lf
+
+# Configuration files
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.xml text eol=lf
+
+# Documentation
+*.md text eol=lf
+*.txt text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Batch files
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.mov binary
+*.mp4 binary
+*.mp3 binary
+*.flv binary
+*.fla binary
+*.swf binary
+*.gz binary
+*.zip binary
+*.7z binary
+*.ttf binary
+*.eot binary
+*.woff binary
+*.woff2 binary
+*.pyc binary
+*.pyo binary
+*.so binary
+*.dylib binary
+*.pyd binary
+*.dll binary
+*.exe binary
+
+# Archives
+*.tar binary
+*.tgz binary
+*.tar.gz binary
+
+# GitHub language detection
+*.rs linguist-language=Rust
+src/* linguist-vendored=false
+rustlette/* linguist-vendored=false
+benchmarks/* linguist-documentation
+docs/* linguist-documentation
+examples/* linguist-documentation

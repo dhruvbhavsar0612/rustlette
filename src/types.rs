@@ -372,7 +372,7 @@ impl Headers {
 
     /// Create headers from a Python dict
     #[classmethod]
-    fn from_dict(_cls: &PyType, dict: &PyAny) -> PyResult<Self> {
+    pub fn from_dict(_cls: &PyType, dict: &PyAny) -> PyResult<Self> {
         let mut headers = HashMap::new();
 
         if let Ok(py_dict) = dict.downcast::<pyo3::types::PyDict>() {
@@ -502,6 +502,29 @@ impl Headers {
     }
 }
 
+// Additional methods outside pymethods
+impl Headers {
+    /// Create headers from a Python dict reference (no PyType needed)
+    pub fn from_dict_ref(dict: &PyAny) -> PyResult<Self> {
+        let mut headers = HashMap::new();
+
+        if let Ok(py_dict) = dict.downcast::<pyo3::types::PyDict>() {
+            for (key, value) in py_dict.iter() {
+                let key: String = key.extract()?;
+                let key = key.to_lowercase(); // Normalize header names
+
+                if let Ok(string_value) = value.extract::<String>() {
+                    headers.insert(key, vec![string_value]);
+                } else if let Ok(list_value) = value.extract::<Vec<String>>() {
+                    headers.insert(key, list_value);
+                }
+            }
+        }
+
+        Ok(Self { headers })
+    }
+}
+
 impl Default for Headers {
     fn default() -> Self {
         Self::new()
@@ -567,6 +590,7 @@ impl HeadersIterator {
 
 /// Query parameters container
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[pyclass]
 pub struct QueryParams {
     params: HashMap<String, Vec<String>>,
 }

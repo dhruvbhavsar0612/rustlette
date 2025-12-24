@@ -1,0 +1,34 @@
+name: Star Tracker
+
+on:
+  watch:
+    types: [started]
+  
+permissions:
+  issues: write
+
+jobs:
+  thank-you:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'watch'
+    steps:
+      - name: Thank the user
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const starrer = context.payload.sender.login;
+            console.log(`⭐ New star from @${starrer}!`);
+            
+            // You can add additional actions here, like:
+            // - Post to Discord/Slack
+            // - Update a database
+            // - Send a tweet
+            
+            // Example: Create a thank you issue (optional)
+            // await github.rest.issues.create({
+            //   owner: context.repo.owner,
+            //   repo: context.repo.repo,
+            //   title: `⭐ Thanks @${starrer} for starring!`,
+            //   body: `Thank you @${starrer} for starring Rustlette! 🎉`,
+            //   labels: ['community']
+            // });

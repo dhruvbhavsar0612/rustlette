@@ -279,7 +279,9 @@ impl Route {
                 .into_iter()
                 .map(|m| m.parse())
                 .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?
+                .map_err(|e: crate::error::RustletteError| {
+                    pyo3::exceptions::PyValueError::new_err(e.to_string())
+                })?
         } else {
             vec![HTTPMethod::GET]
         };
@@ -355,6 +357,7 @@ impl Route {
 
 /// Route matching result
 #[derive(Debug)]
+#[pyclass]
 pub struct RouteMatch {
     pub route: Arc<Route>,
     pub path_params: HashMap<String, PyObject>,
@@ -419,34 +422,25 @@ impl Router {
         Ok(())
     }
 
-    /// Get a route by name
-    pub fn get_route(&self, name: &str) -> Option<&Route> {
-        self.route_map.get(name).map(|route| route.as_ref())
-    }
-
     /// Match a request against all routes
-    pub fn match_request(&self, path: &str, method: &str) -> PyResult<Option<RouteMatch>> {
-        let method: HTTPMethod = method.parse().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid HTTP method: {}", e))
-        })?;
+    pub fn match_request(&self, path: &str, method: &str) -> Option<RouteMatch> {
+        let method: HTTPMethod = match method.parse() {
+            Ok(m) => m,
+            Err(_) => return None,
+        };
 
         for route in &self.routes {
             if let Some(path_params) = route.match_request(path, &method) {
-                return Ok(Some(RouteMatch::new(route.clone(), path_params)));
+                return Some(RouteMatch::new(route.clone(), path_params));
             }
         }
 
-        Ok(None)
-    }
-
-    /// Get all routes
-    #[getter]
-    pub fn routes(&self) -> Vec<&Route> {
-        self.routes.iter().map(|r| r.as_ref()).collect()
+        None
     }
 
     /// Get number of routes
-    pub fn len(&self) -> usize {
+    #[getter]
+    pub fn route_count(&self) -> usize {
         self.routes.len()
     }
 
@@ -471,35 +465,35 @@ impl Router {
         }
     }
 
-    /// Get routes that match a specific path pattern
-    pub fn routes_for_path(&self, path: &str) -> Vec<&Route> {
-        self.routes
-            .iter()
-            .filter(|route| route.compiled.pattern.is_match(path))
-            .map(|r| r.as_ref())
-            .collect()
-    }
-
-    /// Get routes that support a specific method
-    pub fn routes_for_method(&self, method: &str) -> PyResult<Vec<&Route>> {
-        let method: HTTPMethod = method.parse().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid HTTP method: {}", e))
-        })?;
-
-        Ok(self
-            .routes
-            .iter()
-            .filter(|route| route.matches_method(&method))
-            .map(|r| r.as_ref())
-            .collect())
-    }
-
     fn __len__(&self) -> usize {
-        self.len()
+        self.route_count()
     }
 
     fn __repr__(&self) -> String {
         format!("Router({} routes)", self.routes.len())
+    }
+}
+
+// Internal methods not exposed to Python
+impl Router {
+    pub(crate) fn get_route(&self, name: &str) -> Option<Arc<Route>> {
+        self.route_map.get(name).cloned()
+    }
+
+    pub(crate) fn routes_for_path(&self, path: &str) -> Vec<Arc<Route>> {
+        self.routes
+            .iter()
+            .filter(|route| route.compiled.pattern.is_match(path))
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) fn routes_for_method(&self, method: &HTTPMethod) -> Vec<Arc<Route>> {
+        self.routes
+            .iter()
+            .filter(|route| route.matches_method(method))
+            .cloned()
+            .collect()
     }
 }
 

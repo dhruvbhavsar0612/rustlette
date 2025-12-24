@@ -111,10 +111,7 @@ impl RustletteRequest {
         let query_params = QueryParams::from_query_string(parsed_url.query().unwrap_or(""));
 
         let headers = if let Some(headers_dict) = headers {
-            Headers::from_dict(
-                Python::with_gil(|py| py.get_type::<Headers>()),
-                headers_dict,
-            )?
+            Headers::from_dict_ref(headers_dict)?
         } else {
             Headers::new()
         };
@@ -354,7 +351,7 @@ impl RustletteRequest {
 
     /// Check if the request is secure (HTTPS)
     #[getter]
-    pub fn is_secure(&self) -> PyResult<bool> {
+    pub fn is_secure(&mut self) -> PyResult<bool> {
         let scheme = self.scheme()?;
         Ok(scheme == "https")
     }
@@ -437,10 +434,11 @@ impl RustletteRequest {
             self.method
         };
 
+        let url_changed = url.is_some();
         let new_url = url.unwrap_or_else(|| self.url.clone());
 
         let new_headers = if let Some(h) = headers {
-            Headers::from_dict(Python::with_gil(|py| py.get_type::<Headers>()), h)?
+            Headers::from_dict_ref(h)?
         } else {
             self.headers.clone()
         };
@@ -457,7 +455,7 @@ impl RustletteRequest {
             method: new_method,
             url: new_url.clone(),
             headers: new_headers.clone(),
-            query_params: if url.is_some() {
+            query_params: if url_changed {
                 let parsed = Url::parse(&new_url).map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Invalid URL: {}", e))
                 })?;

@@ -76,14 +76,14 @@ impl ExceptionHandler {
         exception: &RustletteError,
     ) -> PyResult<RustletteResponse> {
         Python::with_gil(|py| {
-            let result = self.handler.call1(py, (request, exception.clone()))?;
-            result.extract::<RustletteResponse>()
+            let req_py = Py::new(py, request.clone())?;
+            let result = self.handler.call1(py, (req_py, exception.clone()))?;
+            result.extract::<RustletteResponse>(py)
         })
     }
 }
 
 /// Main Rustlette application class
-#[derive(Debug)]
 #[pyclass]
 pub struct RustletteApp {
     router: Arc<RwLock<Router>>,
@@ -135,35 +135,37 @@ impl RustletteApp {
     }
 
     /// Add a route to the application
-    pub fn add_route(
+    pub fn add_route<'py>(
         &self,
+        py: Python<'py>,
         path: String,
         endpoint: PyObject,
         methods: Option<Vec<String>>,
         name: Option<String>,
         include_in_schema: Option<bool>,
-    ) -> PyResult<()> {
-        Python::with_gil(|py| {
-            let route = Route::new(path, Some(endpoint), methods, name, include_in_schema)?;
+    ) -> PyResult<&'py PyAny> {
+        let route = Route::new(path, Some(endpoint), methods, name, include_in_schema)?;
+        let router = self.router.clone();
 
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                let mut router = self.router.write().await;
-                router.add_route(route)?;
-                Ok(())
-            })
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut router = router.write().await;
+            router.add_route(route)?;
+            Ok(())
         })
     }
 
     /// Add a GET route
     #[pyo3(signature = (path, endpoint, name=None, include_in_schema=None))]
-    pub fn get(
+    pub fn get<'py>(
         &self,
+        py: Python<'py>,
         path: String,
         endpoint: PyObject,
         name: Option<String>,
         include_in_schema: Option<bool>,
-    ) -> PyResult<()> {
+    ) -> PyResult<&'py PyAny> {
         self.add_route(
+            py,
             path,
             endpoint,
             Some(vec!["GET".to_string()]),
@@ -174,14 +176,16 @@ impl RustletteApp {
 
     /// Add a POST route
     #[pyo3(signature = (path, endpoint, name=None, include_in_schema=None))]
-    pub fn post(
+    pub fn post<'py>(
         &self,
+        py: Python<'py>,
         path: String,
         endpoint: PyObject,
         name: Option<String>,
         include_in_schema: Option<bool>,
-    ) -> PyResult<()> {
+    ) -> PyResult<&'py PyAny> {
         self.add_route(
+            py,
             path,
             endpoint,
             Some(vec!["POST".to_string()]),
@@ -192,14 +196,16 @@ impl RustletteApp {
 
     /// Add a PUT route
     #[pyo3(signature = (path, endpoint, name=None, include_in_schema=None))]
-    pub fn put(
+    pub fn put<'py>(
         &self,
+        py: Python<'py>,
         path: String,
         endpoint: PyObject,
         name: Option<String>,
         include_in_schema: Option<bool>,
-    ) -> PyResult<()> {
+    ) -> PyResult<&'py PyAny> {
         self.add_route(
+            py,
             path,
             endpoint,
             Some(vec!["PUT".to_string()]),
@@ -210,14 +216,16 @@ impl RustletteApp {
 
     /// Add a DELETE route
     #[pyo3(signature = (path, endpoint, name=None, include_in_schema=None))]
-    pub fn delete(
+    pub fn delete<'py>(
         &self,
+        py: Python<'py>,
         path: String,
         endpoint: PyObject,
         name: Option<String>,
         include_in_schema: Option<bool>,
-    ) -> PyResult<()> {
+    ) -> PyResult<&'py PyAny> {
         self.add_route(
+            py,
             path,
             endpoint,
             Some(vec!["DELETE".to_string()]),
@@ -228,14 +236,16 @@ impl RustletteApp {
 
     /// Add a PATCH route
     #[pyo3(signature = (path, endpoint, name=None, include_in_schema=None))]
-    pub fn patch(
+    pub fn patch<'py>(
         &self,
+        py: Python<'py>,
         path: String,
         endpoint: PyObject,
         name: Option<String>,
         include_in_schema: Option<bool>,
-    ) -> PyResult<()> {
+    ) -> PyResult<&'py PyAny> {
         self.add_route(
+            py,
             path,
             endpoint,
             Some(vec!["PATCH".to_string()]),
@@ -246,14 +256,16 @@ impl RustletteApp {
 
     /// Add a HEAD route
     #[pyo3(signature = (path, endpoint, name=None, include_in_schema=None))]
-    pub fn head(
+    pub fn head<'py>(
         &self,
+        py: Python<'py>,
         path: String,
         endpoint: PyObject,
         name: Option<String>,
         include_in_schema: Option<bool>,
-    ) -> PyResult<()> {
+    ) -> PyResult<&'py PyAny> {
         self.add_route(
+            py,
             path,
             endpoint,
             Some(vec!["HEAD".to_string()]),
@@ -264,14 +276,16 @@ impl RustletteApp {
 
     /// Add an OPTIONS route
     #[pyo3(signature = (path, endpoint, name=None, include_in_schema=None))]
-    pub fn options(
+    pub fn options<'py>(
         &self,
+        py: Python<'py>,
         path: String,
         endpoint: PyObject,
         name: Option<String>,
         include_in_schema: Option<bool>,
-    ) -> PyResult<()> {
+    ) -> PyResult<&'py PyAny> {
         self.add_route(
+            py,
             path,
             endpoint,
             Some(vec!["OPTIONS".to_string()]),
@@ -281,20 +295,29 @@ impl RustletteApp {
     }
 
     /// Add middleware to the application
-    pub fn add_middleware(&self, middleware: PyObject, name: Option<String>) -> PyResult<()> {
-        Python::with_gil(|py| {
-            let middleware = crate::middleware::Middleware::new(middleware, name);
+    pub fn add_middleware<'py>(
+        &self,
+        py: Python<'py>,
+        middleware: PyObject,
+        name: Option<String>,
+    ) -> PyResult<&'py PyAny> {
+        let middleware = crate::middleware::Middleware::new(middleware, name);
+        let middleware_stack = self.middleware_stack.clone();
 
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                let mut stack = self.middleware_stack.write().await;
-                stack.add(middleware);
-                Ok(())
-            })
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut stack = middleware_stack.write().await;
+            stack.add(middleware);
+            Ok(())
         })
     }
 
     /// Add an event handler for startup or shutdown
-    pub fn add_event_handler(&self, event: String, handler: PyObject) -> PyResult<()> {
+    pub fn add_event_handler<'py>(
+        &self,
+        py: Python<'py>,
+        event: String,
+        handler: PyObject,
+    ) -> PyResult<&'py PyAny> {
         let event_type = match event.to_lowercase().as_str() {
             "startup" => LifecycleEvent::Startup,
             "shutdown" => LifecycleEvent::Shutdown,
@@ -306,39 +329,45 @@ impl RustletteApp {
             }
         };
 
-        Python::with_gil(|py| {
-            let event_handler = EventHandler::new(event_type, handler);
+        let event_handler = EventHandler::new(event_type, handler);
+        let event_handlers = self.event_handlers.clone();
 
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                let mut handlers = self.event_handlers.write().await;
-                handlers.push(event_handler);
-                Ok(())
-            })
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut handlers = event_handlers.write().await;
+            handlers.push(event_handler);
+            Ok(())
         })
     }
 
     /// Add an exception handler
-    pub fn add_exception_handler(
+    pub fn add_exception_handler<'py>(
         &self,
+        py: Python<'py>,
         exception_class: PyObject,
         handler: PyObject,
-    ) -> PyResult<()> {
-        Python::with_gil(|py| {
-            let exception_handler = ExceptionHandler::new(exception_class, handler);
+    ) -> PyResult<&'py PyAny> {
+        let exception_handler = ExceptionHandler::new(exception_class, handler);
+        let exception_handlers = self.exception_handlers.clone();
 
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                let mut handlers = self.exception_handlers.write().await;
-                handlers.push(exception_handler);
-                Ok(())
-            })
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut handlers = exception_handlers.write().await;
+            handlers.push(exception_handler);
+            Ok(())
         })
     }
 
     /// Mount a sub-application at a given path
-    pub fn mount(&self, path: String, app: PyObject, name: Option<String>) -> PyResult<()> {
+    pub fn mount<'py>(
+        &self,
+        py: Python<'py>,
+        path: String,
+        app: PyObject,
+        name: Option<String>,
+    ) -> PyResult<&'py PyAny> {
         // For now, we'll just add this as a catch-all route
         // In a full implementation, this would handle sub-application mounting
         self.add_route(
+            py,
             format!("{}{{path:path}}", path.trim_end_matches('/')),
             app,
             None,
@@ -348,50 +377,55 @@ impl RustletteApp {
     }
 
     /// Generate URL for a named route
-    pub fn url_path_for(
+    pub fn url_path_for<'py>(
         &self,
+        py: Python<'py>,
         name: String,
         path_params: Option<HashMap<String, PyObject>>,
-    ) -> PyResult<String> {
-        Python::with_gil(|py| {
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                let router = self.router.read().await;
-                router
-                    .url_for(&name, path_params)
-                    .map_err(|e| pyo3::exceptions::PyKeyError::new_err(e.to_string()))
-            })
+    ) -> PyResult<&'py PyAny> {
+        let router = self.router.clone();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let router = router.read().await;
+            router
+                .url_for(&name, path_params)
+                .map_err(|e| pyo3::exceptions::PyKeyError::new_err(e.to_string()))
         })
     }
 
     /// Process a request through the application
     #[pyo3(name = "__call__")]
-    pub fn call(&self, request: RustletteRequest) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
-            let app_clone = self.clone();
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                app_clone.process_request(request).await
-            })
-        })
+    pub fn call<'py>(&self, py: Python<'py>, request: RustletteRequest) -> PyResult<&'py PyAny> {
+        let app_clone = self.clone();
+        pyo3_asyncio::tokio::future_into_py(
+            py,
+            async move { app_clone.process_request(request).await },
+        )
     }
 
     /// Get application state
-    pub fn get_state(&self, key: String) -> PyResult<Option<PyObject>> {
-        Python::with_gil(|py| {
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                let state = self.state.read().await;
-                Ok(state.get(&key).cloned())
-            })
+    pub fn get_state<'py>(&self, py: Python<'py>, key: String) -> PyResult<&'py PyAny> {
+        let state = self.state.clone();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let state = state.read().await;
+            Ok(state.get(&key).cloned())
         })
     }
 
     /// Set application state
-    pub fn set_state(&self, key: String, value: PyObject) -> PyResult<()> {
-        Python::with_gil(|py| {
-            pyo3_asyncio::tokio::future_into_py(py, async move {
-                let mut state = self.state.write().await;
-                state.insert(key, value);
-                Ok(())
-            })
+    pub fn set_state<'py>(
+        &self,
+        py: Python<'py>,
+        key: String,
+        value: PyObject,
+    ) -> PyResult<&'py PyAny> {
+        let state = self.state.clone();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut state = state.write().await;
+            state.insert(key, value);
+            Ok(())
         })
     }
 
@@ -443,7 +477,7 @@ def decorator(func):
                     .into_iter()
                     .collect::<HashMap<&str, PyObject>>()
                     .into_py(py)
-                    .downcast::<PyDict>()
+                    .downcast::<PyDict>(py)
                     .unwrap(),
                 ),
             )?;
@@ -488,12 +522,15 @@ impl RustletteApp {
         // Route the request
         let route_match = {
             let router = self.router.read().await;
-            router.match_request(&request.path()?, &request.method.to_string())?
+            let path = request.path().map_err(|e| {
+                RustletteError::internal_error(format!("Failed to get request path: {}", e))
+            })?;
+            router.match_request(&path, &request.method.to_string())
         };
 
         let mut response = if let Some(route_match) = route_match {
             // Set path parameters on request
-            request.set_path_params(route_match.path_params);
+            request.set_path_params(route_match.path_params.clone());
 
             // Call the route handler
             match self.call_endpoint(&request, &route_match).await {
@@ -528,12 +565,13 @@ impl RustletteApp {
     ) -> PyResult<RustletteResponse> {
         Python::with_gil(|py| {
             if let Some(ref handler) = route_match.route.handler {
-                let result = handler.call1(py, (request,))?;
+                let req_py = Py::new(py, request.clone())?;
+                let result = handler.call1(py, (req_py,))?;
 
                 // Handle different return types
-                if let Ok(response) = result.extract::<RustletteResponse>() {
+                if let Ok(response) = result.extract::<RustletteResponse>(py) {
                     Ok(response)
-                } else if let Ok(json_response) = result.extract::<JSONResponse>() {
+                } else if let Ok(json_response) = result.extract::<JSONResponse>(py) {
                     // Extract the base response from JSONResponse
                     Ok(RustletteResponse::new(
                         Some(result),
@@ -542,7 +580,7 @@ impl RustletteApp {
                         Some("application/json".to_string()),
                         None,
                     )?)
-                } else if let Ok(string_result) = result.extract::<String>() {
+                } else if let Ok(string_result) = result.extract::<String>(py) {
                     // String response
                     RustletteResponse::new(
                         Some(string_result.into_py(py)),
@@ -551,7 +589,7 @@ impl RustletteApp {
                         Some("text/plain".to_string()),
                         None,
                     )
-                } else if let Ok(dict_result) = result.downcast::<PyDict>() {
+                } else if let Ok(dict_result) = result.downcast::<PyDict>(py) {
                     // Dict response -> JSON
                     RustletteResponse::new(
                         Some(dict_result.into()),
@@ -562,7 +600,7 @@ impl RustletteApp {
                     )
                 } else {
                     // Try to convert to string
-                    let string_repr = result.str()?.extract::<String>()?;
+                    let string_repr = result.call_method0(py, "__str__")?.extract::<String>(py)?;
                     RustletteResponse::new(
                         Some(string_repr.into_py(py)),
                         Some(200),
@@ -633,9 +671,10 @@ impl RustletteApp {
         }
 
         // Start background task manager
-        self.background_manager.start().map_err(|e| {
-            RustletteError::internal_error(format!("Failed to start background manager: {}", e))
-        })?;
+        // TODO: Fix lifetime issues with async start
+        // Python::with_gil(|py| {
+        //     self.background_manager.start(py)
+        // })?;
 
         Ok(())
     }
@@ -652,9 +691,10 @@ impl RustletteApp {
         }
 
         // Stop background task manager
-        self.background_manager.stop().map_err(|e| {
-            RustletteError::internal_error(format!("Failed to stop background manager: {}", e))
-        })?;
+        // TODO: Fix lifetime issues with async stop
+        // Python::with_gil(|py| {
+        //     self.background_manager.stop(py)
+        // })?;
 
         Ok(())
     }
