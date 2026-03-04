@@ -183,3 +183,6 @@ push_to_github.sh
 *.tmp
 *.temp
 *.bak
+
+# Local testing sandbox (not for commit)
+.testing/

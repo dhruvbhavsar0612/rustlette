@@ -1,14 +1,100 @@
 """
-HTTP status codes for Rustlette
+HTTP codes
+See HTTP Status Code Registry:
+https://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml
+
+And RFC 9110 - https://www.rfc-editor.org/rfc/rfc9110
 """
 
-# 1xx Informational
+from __future__ import annotations
+
+import warnings
+
+__all__ = [
+    "HTTP_100_CONTINUE",
+    "HTTP_101_SWITCHING_PROTOCOLS",
+    "HTTP_102_PROCESSING",
+    "HTTP_103_EARLY_HINTS",
+    "HTTP_200_OK",
+    "HTTP_201_CREATED",
+    "HTTP_202_ACCEPTED",
+    "HTTP_203_NON_AUTHORITATIVE_INFORMATION",
+    "HTTP_204_NO_CONTENT",
+    "HTTP_205_RESET_CONTENT",
+    "HTTP_206_PARTIAL_CONTENT",
+    "HTTP_207_MULTI_STATUS",
+    "HTTP_208_ALREADY_REPORTED",
+    "HTTP_226_IM_USED",
+    "HTTP_300_MULTIPLE_CHOICES",
+    "HTTP_301_MOVED_PERMANENTLY",
+    "HTTP_302_FOUND",
+    "HTTP_303_SEE_OTHER",
+    "HTTP_304_NOT_MODIFIED",
+    "HTTP_305_USE_PROXY",
+    "HTTP_306_RESERVED",
+    "HTTP_307_TEMPORARY_REDIRECT",
+    "HTTP_308_PERMANENT_REDIRECT",
+    "HTTP_400_BAD_REQUEST",
+    "HTTP_401_UNAUTHORIZED",
+    "HTTP_402_PAYMENT_REQUIRED",
+    "HTTP_403_FORBIDDEN",
+    "HTTP_404_NOT_FOUND",
+    "HTTP_405_METHOD_NOT_ALLOWED",
+    "HTTP_406_NOT_ACCEPTABLE",
+    "HTTP_407_PROXY_AUTHENTICATION_REQUIRED",
+    "HTTP_408_REQUEST_TIMEOUT",
+    "HTTP_409_CONFLICT",
+    "HTTP_410_GONE",
+    "HTTP_411_LENGTH_REQUIRED",
+    "HTTP_412_PRECONDITION_FAILED",
+    "HTTP_413_CONTENT_TOO_LARGE",
+    "HTTP_414_URI_TOO_LONG",
+    "HTTP_415_UNSUPPORTED_MEDIA_TYPE",
+    "HTTP_416_RANGE_NOT_SATISFIABLE",
+    "HTTP_417_EXPECTATION_FAILED",
+    "HTTP_418_IM_A_TEAPOT",
+    "HTTP_421_MISDIRECTED_REQUEST",
+    "HTTP_422_UNPROCESSABLE_CONTENT",
+    "HTTP_423_LOCKED",
+    "HTTP_424_FAILED_DEPENDENCY",
+    "HTTP_425_TOO_EARLY",
+    "HTTP_426_UPGRADE_REQUIRED",
+    "HTTP_428_PRECONDITION_REQUIRED",
+    "HTTP_429_TOO_MANY_REQUESTS",
+    "HTTP_431_REQUEST_HEADER_FIELDS_TOO_LARGE",
+    "HTTP_451_UNAVAILABLE_FOR_LEGAL_REASONS",
+    "HTTP_500_INTERNAL_SERVER_ERROR",
+    "HTTP_501_NOT_IMPLEMENTED",
+    "HTTP_502_BAD_GATEWAY",
+    "HTTP_503_SERVICE_UNAVAILABLE",
+    "HTTP_504_GATEWAY_TIMEOUT",
+    "HTTP_505_HTTP_VERSION_NOT_SUPPORTED",
+    "HTTP_506_VARIANT_ALSO_NEGOTIATES",
+    "HTTP_507_INSUFFICIENT_STORAGE",
+    "HTTP_508_LOOP_DETECTED",
+    "HTTP_510_NOT_EXTENDED",
+    "HTTP_511_NETWORK_AUTHENTICATION_REQUIRED",
+    "WS_1000_NORMAL_CLOSURE",
+    "WS_1001_GOING_AWAY",
+    "WS_1002_PROTOCOL_ERROR",
+    "WS_1003_UNSUPPORTED_DATA",
+    "WS_1005_NO_STATUS_RCVD",
+    "WS_1006_ABNORMAL_CLOSURE",
+    "WS_1007_INVALID_FRAME_PAYLOAD_DATA",
+    "WS_1008_POLICY_VIOLATION",
+    "WS_1009_MESSAGE_TOO_BIG",
+    "WS_1010_MANDATORY_EXT",
+    "WS_1011_INTERNAL_ERROR",
+    "WS_1012_SERVICE_RESTART",
+    "WS_1013_TRY_AGAIN_LATER",
+    "WS_1014_BAD_GATEWAY",
+    "WS_1015_TLS_HANDSHAKE",
+]
+
 HTTP_100_CONTINUE = 100
 HTTP_101_SWITCHING_PROTOCOLS = 101
 HTTP_102_PROCESSING = 102
 HTTP_103_EARLY_HINTS = 103
-
-# 2xx Success
 HTTP_200_OK = 200
 HTTP_201_CREATED = 201
 HTTP_202_ACCEPTED = 202
@@ -19,18 +105,15 @@ HTTP_206_PARTIAL_CONTENT = 206
 HTTP_207_MULTI_STATUS = 207
 HTTP_208_ALREADY_REPORTED = 208
 HTTP_226_IM_USED = 226
-
-# 3xx Redirection
 HTTP_300_MULTIPLE_CHOICES = 300
 HTTP_301_MOVED_PERMANENTLY = 301
 HTTP_302_FOUND = 302
 HTTP_303_SEE_OTHER = 303
 HTTP_304_NOT_MODIFIED = 304
 HTTP_305_USE_PROXY = 305
+HTTP_306_RESERVED = 306
 HTTP_307_TEMPORARY_REDIRECT = 307
 HTTP_308_PERMANENT_REDIRECT = 308
-
-# 4xx Client Error
 HTTP_400_BAD_REQUEST = 400
 HTTP_401_UNAUTHORIZED = 401
 HTTP_402_PAYMENT_REQUIRED = 402
@@ -44,14 +127,14 @@ HTTP_409_CONFLICT = 409
 HTTP_410_GONE = 410
 HTTP_411_LENGTH_REQUIRED = 411
 HTTP_412_PRECONDITION_FAILED = 412
-HTTP_413_REQUEST_ENTITY_TOO_LARGE = 413
-HTTP_414_REQUEST_URI_TOO_LONG = 414
+HTTP_413_CONTENT_TOO_LARGE = 413
+HTTP_414_URI_TOO_LONG = 414
 HTTP_415_UNSUPPORTED_MEDIA_TYPE = 415
-HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE = 416
+HTTP_416_RANGE_NOT_SATISFIABLE = 416
 HTTP_417_EXPECTATION_FAILED = 417
 HTTP_418_IM_A_TEAPOT = 418
 HTTP_421_MISDIRECTED_REQUEST = 421
-HTTP_422_UNPROCESSABLE_ENTITY = 422
+HTTP_422_UNPROCESSABLE_CONTENT = 422
 HTTP_423_LOCKED = 423
 HTTP_424_FAILED_DEPENDENCY = 424
 HTTP_425_TOO_EARLY = 425
@@ -60,8 +143,6 @@ HTTP_428_PRECONDITION_REQUIRED = 428
 HTTP_429_TOO_MANY_REQUESTS = 429
 HTTP_431_REQUEST_HEADER_FIELDS_TOO_LARGE = 431
 HTTP_451_UNAVAILABLE_FOR_LEGAL_REASONS = 451
-
-# 5xx Server Error
 HTTP_500_INTERNAL_SERVER_ERROR = 500
 HTTP_501_NOT_IMPLEMENTED = 501
 HTTP_502_BAD_GATEWAY = 502
@@ -75,184 +156,54 @@ HTTP_510_NOT_EXTENDED = 510
 HTTP_511_NETWORK_AUTHENTICATION_REQUIRED = 511
 
 
-class status:
-    """
-    Status codes constants for convenient access.
+"""
+WebSocket codes
+https://www.iana.org/assignments/websocket/websocket.xml#close-code-number
+https://developer.mozilla.org/en-US/docs/Web/API/CloseEvent
+"""
+WS_1000_NORMAL_CLOSURE = 1000
+WS_1001_GOING_AWAY = 1001
+WS_1002_PROTOCOL_ERROR = 1002
+WS_1003_UNSUPPORTED_DATA = 1003
+WS_1005_NO_STATUS_RCVD = 1005
+WS_1006_ABNORMAL_CLOSURE = 1006
+WS_1007_INVALID_FRAME_PAYLOAD_DATA = 1007
+WS_1008_POLICY_VIOLATION = 1008
+WS_1009_MESSAGE_TOO_BIG = 1009
+WS_1010_MANDATORY_EXT = 1010
+WS_1011_INTERNAL_ERROR = 1011
+WS_1012_SERVICE_RESTART = 1012
+WS_1013_TRY_AGAIN_LATER = 1013
+WS_1014_BAD_GATEWAY = 1014
+WS_1015_TLS_HANDSHAKE = 1015
 
-    Usage:
-        from rustlette import status
-
-        return Response("OK", status_code=status.HTTP_200_OK)
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-    """
-
-    # 1xx Informational
-    HTTP_100_CONTINUE = 100
-    HTTP_101_SWITCHING_PROTOCOLS = 101
-    HTTP_102_PROCESSING = 102
-    HTTP_103_EARLY_HINTS = 103
-
-    # 2xx Success
-    HTTP_200_OK = 200
-    HTTP_201_CREATED = 201
-    HTTP_202_ACCEPTED = 202
-    HTTP_203_NON_AUTHORITATIVE_INFORMATION = 203
-    HTTP_204_NO_CONTENT = 204
-    HTTP_205_RESET_CONTENT = 205
-    HTTP_206_PARTIAL_CONTENT = 206
-    HTTP_207_MULTI_STATUS = 207
-    HTTP_208_ALREADY_REPORTED = 208
-    HTTP_226_IM_USED = 226
-
-    # 3xx Redirection
-    HTTP_300_MULTIPLE_CHOICES = 300
-    HTTP_301_MOVED_PERMANENTLY = 301
-    HTTP_302_FOUND = 302
-    HTTP_303_SEE_OTHER = 303
-    HTTP_304_NOT_MODIFIED = 304
-    HTTP_305_USE_PROXY = 305
-    HTTP_307_TEMPORARY_REDIRECT = 307
-    HTTP_308_PERMANENT_REDIRECT = 308
-
-    # 4xx Client Error
-    HTTP_400_BAD_REQUEST = 400
-    HTTP_401_UNAUTHORIZED = 401
-    HTTP_402_PAYMENT_REQUIRED = 402
-    HTTP_403_FORBIDDEN = 403
-    HTTP_404_NOT_FOUND = 404
-    HTTP_405_METHOD_NOT_ALLOWED = 405
-    HTTP_406_NOT_ACCEPTABLE = 406
-    HTTP_407_PROXY_AUTHENTICATION_REQUIRED = 407
-    HTTP_408_REQUEST_TIMEOUT = 408
-    HTTP_409_CONFLICT = 409
-    HTTP_410_GONE = 410
-    HTTP_411_LENGTH_REQUIRED = 411
-    HTTP_412_PRECONDITION_FAILED = 412
-    HTTP_413_REQUEST_ENTITY_TOO_LARGE = 413
-    HTTP_414_REQUEST_URI_TOO_LONG = 414
-    HTTP_415_UNSUPPORTED_MEDIA_TYPE = 415
-    HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE = 416
-    HTTP_417_EXPECTATION_FAILED = 417
-    HTTP_418_IM_A_TEAPOT = 418
-    HTTP_421_MISDIRECTED_REQUEST = 421
-    HTTP_422_UNPROCESSABLE_ENTITY = 422
-    HTTP_423_LOCKED = 423
-    HTTP_424_FAILED_DEPENDENCY = 424
-    HTTP_425_TOO_EARLY = 425
-    HTTP_426_UPGRADE_REQUIRED = 426
-    HTTP_428_PRECONDITION_REQUIRED = 428
-    HTTP_429_TOO_MANY_REQUESTS = 429
-    HTTP_431_REQUEST_HEADER_FIELDS_TOO_LARGE = 431
-    HTTP_451_UNAVAILABLE_FOR_LEGAL_REASONS = 451
-
-    # 5xx Server Error
-    HTTP_500_INTERNAL_SERVER_ERROR = 500
-    HTTP_501_NOT_IMPLEMENTED = 501
-    HTTP_502_BAD_GATEWAY = 502
-    HTTP_503_SERVICE_UNAVAILABLE = 503
-    HTTP_504_GATEWAY_TIMEOUT = 504
-    HTTP_505_HTTP_VERSION_NOT_SUPPORTED = 505
-    HTTP_506_VARIANT_ALSO_NEGOTIATES = 506
-    HTTP_507_INSUFFICIENT_STORAGE = 507
-    HTTP_508_LOOP_DETECTED = 508
-    HTTP_510_NOT_EXTENDED = 510
-    HTTP_511_NETWORK_AUTHENTICATION_REQUIRED = 511
+__deprecated__ = {
+    "HTTP_413_REQUEST_ENTITY_TOO_LARGE": 413,
+    "HTTP_414_REQUEST_URI_TOO_LONG": 414,
+    "HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE": 416,
+    "HTTP_422_UNPROCESSABLE_ENTITY": 422,
+}
 
 
-def is_informational(status_code: int) -> bool:
-    """Check if status code is informational (1xx)."""
-    return 100 <= status_code < 200
-
-
-def is_success(status_code: int) -> bool:
-    """Check if status code indicates success (2xx)."""
-    return 200 <= status_code < 300
-
-
-def is_redirection(status_code: int) -> bool:
-    """Check if status code indicates redirection (3xx)."""
-    return 300 <= status_code < 400
-
-
-def is_client_error(status_code: int) -> bool:
-    """Check if status code indicates client error (4xx)."""
-    return 400 <= status_code < 500
-
-
-def is_server_error(status_code: int) -> bool:
-    """Check if status code indicates server error (5xx)."""
-    return 500 <= status_code < 600
-
-
-def is_error(status_code: int) -> bool:
-    """Check if status code indicates any error (4xx or 5xx)."""
-    return status_code >= 400
-
-
-def get_status_text(status_code: int) -> str:
-    """Get the standard text for a status code."""
-    status_texts = {
-        100: "Continue",
-        101: "Switching Protocols",
-        102: "Processing",
-        103: "Early Hints",
-        200: "OK",
-        201: "Created",
-        202: "Accepted",
-        203: "Non-Authoritative Information",
-        204: "No Content",
-        205: "Reset Content",
-        206: "Partial Content",
-        207: "Multi-Status",
-        208: "Already Reported",
-        226: "IM Used",
-        300: "Multiple Choices",
-        301: "Moved Permanently",
-        302: "Found",
-        303: "See Other",
-        304: "Not Modified",
-        305: "Use Proxy",
-        307: "Temporary Redirect",
-        308: "Permanent Redirect",
-        400: "Bad Request",
-        401: "Unauthorized",
-        402: "Payment Required",
-        403: "Forbidden",
-        404: "Not Found",
-        405: "Method Not Allowed",
-        406: "Not Acceptable",
-        407: "Proxy Authentication Required",
-        408: "Request Timeout",
-        409: "Conflict",
-        410: "Gone",
-        411: "Length Required",
-        412: "Precondition Failed",
-        413: "Request Entity Too Large",
-        414: "Request-URI Too Long",
-        415: "Unsupported Media Type",
-        416: "Requested Range Not Satisfiable",
-        417: "Expectation Failed",
-        418: "I'm a teapot",
-        421: "Misdirected Request",
-        422: "Unprocessable Entity",
-        423: "Locked",
-        424: "Failed Dependency",
-        425: "Too Early",
-        426: "Upgrade Required",
-        428: "Precondition Required",
-        429: "Too Many Requests",
-        431: "Request Header Fields Too Large",
-        451: "Unavailable For Legal Reasons",
-        500: "Internal Server Error",
-        501: "Not Implemented",
-        502: "Bad Gateway",
-        503: "Service Unavailable",
-        504: "Gateway Timeout",
-        505: "HTTP Version Not Supported",
-        506: "Variant Also Negotiates",
-        507: "Insufficient Storage",
-        508: "Loop Detected",
-        510: "Not Extended",
-        511: "Network Authentication Required",
+def __getattr__(name: str) -> int:
+    deprecation_changes = {
+        "HTTP_413_REQUEST_ENTITY_TOO_LARGE": "HTTP_413_CONTENT_TOO_LARGE",
+        "HTTP_414_REQUEST_URI_TOO_LONG": "HTTP_414_URI_TOO_LONG",
+        "HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE": "HTTP_416_RANGE_NOT_SATISFIABLE",
+        "HTTP_422_UNPROCESSABLE_ENTITY": "HTTP_422_UNPROCESSABLE_CONTENT",
     }
-    return status_texts.get(status_code, "Unknown")
+
+    deprecated = __deprecated__.get(name)
+    if deprecated:
+        warnings.warn(
+            f"'{name}' is deprecated. Use '{deprecation_changes[name]}' instead.",
+            category=DeprecationWarning,
+            stacklevel=3,
+        )
+        return deprecated
+
+    raise AttributeError(f"module 'rustlette.status' has no attribute '{name}'")
+
+
+def __dir__() -> list[str]:
+    return sorted(list(__all__) + list(__deprecated__.keys()))  # pragma: no cover

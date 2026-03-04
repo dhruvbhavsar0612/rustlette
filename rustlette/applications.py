@@ -1,121 +1,211 @@
-"""
-Rustlette application wrapper providing Starlette-compatible API
-"""
+from __future__ import annotations
 
-import inspect
-import typing
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+import warnings
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from typing import Any, ParamSpec, TypeVar
 
-from ._rustlette_core import RustletteApp as _RustletteApp
-from .exceptions import HTTPException
-from .middleware import Middleware
-from .requests import Request
-from .responses import PlainTextResponse, Response
-from .routing import BaseRoute, Route, Router
-from .types import ASGIApp, Lifespan, Receive, Scope, Send
+from rustlette.datastructures import State, URLPath
+from rustlette.middleware import Middleware, _MiddlewareFactory
+from rustlette.middleware.base import BaseHTTPMiddleware
+from rustlette.middleware.errors import ServerErrorMiddleware
+from rustlette.middleware.exceptions import ExceptionMiddleware
+from rustlette.requests import Request
+from rustlette.responses import Response
+from rustlette.routing import BaseRoute, Router
+from rustlette.types import ASGIApp, ExceptionHandler, Lifespan, Receive, Scope, Send
+from rustlette.websockets import WebSocket
+
+AppType = TypeVar("AppType", bound="Starlette")
+P = ParamSpec("P")
 
 
-class Rustlette:
-    """
-    Main application class providing Starlette-compatible API.
-
-    This class wraps the Rust implementation while maintaining full
-    compatibility with Starlette's interface.
-    """
+class Starlette:
+    """Creates an Starlette application."""
 
     def __init__(
-        self,
+        self: AppType,
         debug: bool = False,
-        routes: Optional[Sequence[BaseRoute]] = None,
-        middleware: Optional[Sequence[Middleware]] = None,
-        exception_handlers: Optional[
-            Dict[Union[int, type], Callable[[Request, Exception], Response]]
-        ] = None,
-        on_startup: Optional[Sequence[Callable[[], Any]]] = None,
-        on_shutdown: Optional[Sequence[Callable[[], Any]]] = None,
-        lifespan: Optional[Lifespan] = None,
+        routes: Sequence[BaseRoute] | None = None,
+        middleware: Sequence[Middleware] | None = None,
+        exception_handlers: Mapping[Any, ExceptionHandler] | None = None,
+        on_startup: Sequence[Callable[[], Any]] | None = None,
+        on_shutdown: Sequence[Callable[[], Any]] | None = None,
+        lifespan: Lifespan[AppType] | None = None,
     ) -> None:
-        """
-        Initialize the Rustlette application.
+        """Initializes the application.
 
-        Args:
-            debug: Enable debug mode
-            routes: Initial routes to add
-            middleware: Initial middleware to add
-            exception_handlers: Exception handlers mapping
-            on_startup: Startup event handlers
-            on_shutdown: Shutdown event handlers
-            lifespan: Lifespan context manager
+        Parameters:
+            debug: Boolean indicating if debug tracebacks should be returned on errors.
+            routes: A list of routes to serve incoming HTTP and WebSocket requests.
+            middleware: A list of middleware to run for every request. A starlette
+                application will always automatically include two middleware classes.
+                `ServerErrorMiddleware` is added as the very outermost middleware, to handle
+                any uncaught errors occurring anywhere in the entire stack.
+                `ExceptionMiddleware` is added as the very innermost middleware, to deal
+                with handled exception cases occurring in the routing or endpoints.
+            exception_handlers: A mapping of either integer status codes,
+                or exception class types onto callables which handle the exceptions.
+                Exception handler callables should be of the form
+                `handler(request, exc) -> response` and may be either standard functions, or
+                async functions.
+            on_startup: A list of callables to run on application startup.
+                Startup handler callables do not take any arguments, and may be either
+                standard functions, or async functions.
+            on_shutdown: A list of callables to run on application shutdown.
+                Shutdown handler callables do not take any arguments, and may be either
+                standard functions, or async functions.
+            lifespan: A lifespan context function, which can be used to perform
+                startup and shutdown tasks. This is a newer style that replaces the
+                `on_startup` and `on_shutdown` handlers. Use one or the other, not both.
         """
-        # Create the Rust core application
-        self._app = _RustletteApp(debug=debug)
+        # The lifespan context function is a newer style that replaces
+        # on_startup / on_shutdown handlers. Use one or the other, not both.
+        assert lifespan is None or (on_startup is None and on_shutdown is None), (
+            "Use either 'lifespan' or 'on_startup'/'on_shutdown', not both."
+        )
 
-        # Store Python-level state
         self.debug = debug
-        self.state = {}
-        self.exception_handlers = exception_handlers or {}
-        self.middleware_stack = list(middleware or [])
-        self.startup_handlers = list(on_startup or [])
-        self.shutdown_handlers = list(on_shutdown or [])
-        self.lifespan = lifespan
+        self.state = State()
+        self.router = Router(
+            routes, on_startup=on_startup, on_shutdown=on_shutdown, lifespan=lifespan
+        )
+        self.exception_handlers = (
+            {} if exception_handlers is None else dict(exception_handlers)
+        )
+        self.user_middleware = [] if middleware is None else list(middleware)
+        self.middleware_stack: ASGIApp | None = None
 
-        # Add initial routes
-        if routes:
-            for route in routes:
-                self.routes.append(route)
+    def build_middleware_stack(self) -> ASGIApp:
+        debug = self.debug
+        error_handler = None
+        exception_handlers: dict[Any, ExceptionHandler] = {}
 
-        # Add initial middleware
-        for middleware in self.middleware_stack:
-            self._app.add_middleware(middleware.func, middleware.name)
+        for key, value in self.exception_handlers.items():
+            if key in (500, Exception):
+                error_handler = value
+            else:
+                exception_handlers[key] = value
 
-        # Add event handlers
-        for handler in self.startup_handlers:
-            self._app.add_event_handler("startup", handler)
+        middleware = (
+            [Middleware(ServerErrorMiddleware, handler=error_handler, debug=debug)]
+            + self.user_middleware
+            + [
+                Middleware(
+                    ExceptionMiddleware, handlers=exception_handlers, debug=debug
+                )
+            ]
+        )
 
-        for handler in self.shutdown_handlers:
-            self._app.add_event_handler("shutdown", handler)
-
-        # Add exception handlers
-        for exc_class, handler in self.exception_handlers.items():
-            self._app.add_exception_handler(exc_class, handler)
+        app = self.router
+        for cls, args, kwargs in reversed(middleware):
+            app = cls(app, *args, **kwargs)
+        return app
 
     @property
-    def routes(self) -> List[BaseRoute]:
-        """Get the list of routes."""
-        # This would need to be synchronized with the Rust router
-        # For now, return empty list - in full implementation would maintain sync
-        return []
+    def routes(self) -> list[BaseRoute]:
+        return self.router.routes
+
+    def url_path_for(self, name: str, /, **path_params: Any) -> URLPath:
+        return self.router.url_path_for(name, **path_params)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        scope["app"] = self
+        if self.middleware_stack is None:
+            self.middleware_stack = self.build_middleware_stack()
+        await self.middleware_stack(scope, receive, send)
+
+    def on_event(self, event_type: str) -> Callable:  # type: ignore[type-arg]
+        return self.router.on_event(event_type)  # pragma: no cover
+
+    def mount(self, path: str, app: ASGIApp, name: str | None = None) -> None:
+        self.router.mount(path, app=app, name=name)  # pragma: no cover
+
+    def host(self, host: str, app: ASGIApp, name: str | None = None) -> None:
+        self.router.host(host, app=app, name=name)  # pragma: no cover
+
+    def add_middleware(
+        self,
+        middleware_class: _MiddlewareFactory[P],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> None:
+        if self.middleware_stack is not None:  # pragma: no cover
+            raise RuntimeError("Cannot add middleware after an application has started")
+        self.user_middleware.insert(0, Middleware(middleware_class, *args, **kwargs))
+
+    def add_exception_handler(
+        self,
+        exc_class_or_status_code: int | type[Exception],
+        handler: ExceptionHandler,
+    ) -> None:  # pragma: no cover
+        self.exception_handlers[exc_class_or_status_code] = handler
+
+    def add_event_handler(
+        self,
+        event_type: str,
+        func: Callable,  # type: ignore[type-arg]
+    ) -> None:  # pragma: no cover
+        self.router.add_event_handler(event_type, func)
 
     def add_route(
         self,
         path: str,
-        endpoint: Callable,
-        methods: Optional[List[str]] = None,
-        name: Optional[str] = None,
+        route: Callable[[Request], Awaitable[Response] | Response],
+        methods: list[str] | None = None,
+        name: str | None = None,
         include_in_schema: bool = True,
-    ) -> None:
-        """Add a route to the application."""
-        self._app.add_route(
-            path=path,
-            endpoint=endpoint,
-            methods=methods,
-            name=name,
-            include_in_schema=include_in_schema,
+    ) -> None:  # pragma: no cover
+        self.router.add_route(
+            path, route, methods=methods, name=name, include_in_schema=include_in_schema
         )
+
+    def add_websocket_route(
+        self,
+        path: str,
+        route: Callable[[WebSocket], Awaitable[None]],
+        name: str | None = None,
+    ) -> None:  # pragma: no cover
+        self.router.add_websocket_route(path, route, name=name)
+
+    def exception_handler(
+        self, exc_class_or_status_code: int | type[Exception]
+    ) -> Callable:  # type: ignore[type-arg]
+        warnings.warn(
+            "The `exception_handler` decorator is deprecated, and will be removed in version 1.0.0. "
+            "Refer to https://starlette.dev/exceptions/ for the recommended approach.",
+            DeprecationWarning,
+        )
+
+        def decorator(func: Callable) -> Callable:  # type: ignore[type-arg]
+            self.add_exception_handler(exc_class_or_status_code, func)
+            return func
+
+        return decorator
 
     def route(
         self,
         path: str,
-        methods: Optional[List[str]] = None,
-        name: Optional[str] = None,
+        methods: list[str] | None = None,
+        name: str | None = None,
         include_in_schema: bool = True,
-    ) -> Callable:
-        """Route decorator."""
+    ) -> Callable:  # type: ignore[type-arg]
+        """
+        We no longer document this decorator style API, and its usage is discouraged.
+        Instead you should use the following approach:
 
-        def decorator(func: Callable) -> Callable:
-            self.add_route(
-                path=path,
-                endpoint=func,
+        >>> routes = [Route(path, endpoint=...), ...]
+        >>> app = Starlette(routes=routes)
+        """
+        warnings.warn(
+            "The `route` decorator is deprecated, and will be removed in version 1.0.0. "
+            "Refer to https://starlette.dev/routing/ for the recommended approach.",
+            DeprecationWarning,
+        )
+
+        def decorator(func: Callable) -> Callable:  # type: ignore[type-arg]
+            self.router.add_route(
+                path,
+                func,
                 methods=methods,
                 name=name,
                 include_in_schema=include_in_schema,
@@ -124,251 +214,45 @@ class Rustlette:
 
         return decorator
 
-    def get(
-        self,
-        path: str,
-        name: Optional[str] = None,
-        include_in_schema: bool = True,
-    ) -> Callable:
-        """GET route decorator."""
-        return self.route(
-            path=path,
-            methods=["GET"],
-            name=name,
-            include_in_schema=include_in_schema,
+    def websocket_route(self, path: str, name: str | None = None) -> Callable:  # type: ignore[type-arg]
+        """
+        We no longer document this decorator style API, and its usage is discouraged.
+        Instead you should use the following approach:
+
+        >>> routes = [WebSocketRoute(path, endpoint=...), ...]
+        >>> app = Starlette(routes=routes)
+        """
+        warnings.warn(
+            "The `websocket_route` decorator is deprecated, and will be removed in version 1.0.0. "
+            "Refer to https://starlette.dev/routing/#websocket-routing for the recommended approach.",
+            DeprecationWarning,
         )
 
-    def post(
-        self,
-        path: str,
-        name: Optional[str] = None,
-        include_in_schema: bool = True,
-    ) -> Callable:
-        """POST route decorator."""
-        return self.route(
-            path=path,
-            methods=["POST"],
-            name=name,
-            include_in_schema=include_in_schema,
-        )
-
-    def put(
-        self,
-        path: str,
-        name: Optional[str] = None,
-        include_in_schema: bool = True,
-    ) -> Callable:
-        """PUT route decorator."""
-        return self.route(
-            path=path,
-            methods=["PUT"],
-            name=name,
-            include_in_schema=include_in_schema,
-        )
-
-    def patch(
-        self,
-        path: str,
-        name: Optional[str] = None,
-        include_in_schema: bool = True,
-    ) -> Callable:
-        """PATCH route decorator."""
-        return self.route(
-            path=path,
-            methods=["PATCH"],
-            name=name,
-            include_in_schema=include_in_schema,
-        )
-
-    def delete(
-        self,
-        path: str,
-        name: Optional[str] = None,
-        include_in_schema: bool = True,
-    ) -> Callable:
-        """DELETE route decorator."""
-        return self.route(
-            path=path,
-            methods=["DELETE"],
-            name=name,
-            include_in_schema=include_in_schema,
-        )
-
-    def head(
-        self,
-        path: str,
-        name: Optional[str] = None,
-        include_in_schema: bool = True,
-    ) -> Callable:
-        """HEAD route decorator."""
-        return self.route(
-            path=path,
-            methods=["HEAD"],
-            name=name,
-            include_in_schema=include_in_schema,
-        )
-
-    def options(
-        self,
-        path: str,
-        name: Optional[str] = None,
-        include_in_schema: bool = True,
-    ) -> Callable:
-        """OPTIONS route decorator."""
-        return self.route(
-            path=path,
-            methods=["OPTIONS"],
-            name=name,
-            include_in_schema=include_in_schema,
-        )
-
-    def trace(
-        self,
-        path: str,
-        name: Optional[str] = None,
-        include_in_schema: bool = True,
-    ) -> Callable:
-        """TRACE route decorator."""
-        return self.route(
-            path=path,
-            methods=["TRACE"],
-            name=name,
-            include_in_schema=include_in_schema,
-        )
-
-    def websocket_route(
-        self,
-        path: str,
-        name: Optional[str] = None,
-    ) -> Callable:
-        """WebSocket route decorator."""
-
-        def decorator(func: Callable) -> Callable:
-            # WebSocket routes would be handled differently
-            # For now, just store the function
+        def decorator(func: Callable) -> Callable:  # type: ignore[type-arg]
+            self.router.add_websocket_route(path, func, name=name)
             return func
 
         return decorator
 
-    def mount(
-        self,
-        path: str,
-        app: ASGIApp,
-        name: Optional[str] = None,
-    ) -> None:
-        """Mount a sub-application."""
-        self._app.mount(path=path, app=app, name=name)
+    def middleware(self, middleware_type: str) -> Callable:  # type: ignore[type-arg]
+        """
+        We no longer document this decorator style API, and its usage is discouraged.
+        Instead you should use the following approach:
 
-    def add_middleware(
-        self,
-        middleware_class: type,
-        **options: Any,
-    ) -> None:
-        """Add middleware to the application."""
-        middleware = middleware_class(**options)
-        self.middleware_stack.append(Middleware(middleware))
-        self._app.add_middleware(middleware)
+        >>> middleware = [Middleware(...), ...]
+        >>> app = Starlette(middleware=middleware)
+        """
+        warnings.warn(
+            "The `middleware` decorator is deprecated, and will be removed in version 1.0.0. "
+            "Refer to https://starlette.dev/middleware/#using-middleware for recommended approach.",
+            DeprecationWarning,
+        )
+        assert middleware_type == "http", (
+            'Currently only middleware("http") is supported.'
+        )
 
-    def middleware(self, middleware_type: str) -> Callable:
-        """Middleware decorator."""
-
-        def decorator(func: Callable) -> Callable:
-            if middleware_type == "http":
-                self.add_middleware(BaseHTTPMiddleware, dispatch=func)
-            else:
-                raise ValueError(f"Unknown middleware type: {middleware_type}")
+        def decorator(func: Callable) -> Callable:  # type: ignore[type-arg]
+            self.add_middleware(BaseHTTPMiddleware, dispatch=func)
             return func
 
         return decorator
-
-    def add_exception_handler(
-        self,
-        exc_class_or_status_code: Union[int, type],
-        handler: Callable[[Request, Exception], Response],
-    ) -> None:
-        """Add an exception handler."""
-        self.exception_handlers[exc_class_or_status_code] = handler
-        self._app.add_exception_handler(exc_class_or_status_code, handler)
-
-    def exception_handler(
-        self,
-        exc_class_or_status_code: Union[int, type],
-    ) -> Callable:
-        """Exception handler decorator."""
-
-        def decorator(func: Callable) -> Callable:
-            self.add_exception_handler(exc_class_or_status_code, func)
-            return func
-
-        return decorator
-
-    def add_event_handler(
-        self,
-        event_type: str,
-        func: Callable[[], Any],
-    ) -> None:
-        """Add an event handler."""
-        if event_type == "startup":
-            self.startup_handlers.append(func)
-        elif event_type == "shutdown":
-            self.shutdown_handlers.append(func)
-        else:
-            raise ValueError(f"Unknown event type: {event_type}")
-
-        self._app.add_event_handler(event_type, func)
-
-    def on_event(self, event_type: str) -> Callable:
-        """Event handler decorator."""
-
-        def decorator(func: Callable) -> Callable:
-            self.add_event_handler(event_type, func)
-            return func
-
-        return decorator
-
-    def url_path_for(self, name: str, **path_params: Any) -> str:
-        """Generate URL path for a named route."""
-        return self._app.url_path_for(name, path_params)
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """ASGI application interface."""
-        # Create ASGI wrapper and delegate
-        asgi_app = self._app.asgi()
-        await asgi_app(scope, receive, send)
-
-    def __repr__(self) -> str:
-        return f"Rustlette(debug={self.debug})"
-
-
-# Import middleware base class to avoid circular imports
-class BaseHTTPMiddleware:
-    """Base class for HTTP middleware."""
-
-    def __init__(self, app: ASGIApp, dispatch: Optional[Callable] = None) -> None:
-        self.app = app
-        self.dispatch_func = dispatch
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        if self.dispatch_func:
-            request = Request(scope, receive)
-            response = await self.dispatch_func(request, self.call_next)
-            await response(scope, receive, send)
-        else:
-            await self.app(scope, receive, send)
-
-    async def call_next(self, request: Request) -> Response:
-        """Call the next middleware or endpoint."""
-        # This would need proper implementation
-        return PlainTextResponse("Not implemented")
-
-    async def dispatch(
-        self,
-        request: Request,
-        call_next: Callable[[Request], typing.Awaitable[Response]],
-    ) -> Response:
-        """Override this method to implement middleware logic."""
-        return await call_next(request)
