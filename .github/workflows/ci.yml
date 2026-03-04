@@ -46,9 +46,9 @@ jobs:
       - name: Install test dependencies
         run: |
           . .venv/bin/activate
-          pip install pytest pytest-asyncio httpx anyio python-multipart itsdangerous
+          pip install pytest "pytest-asyncio>=0.23" httpx anyio python-multipart itsdangerous typing-extensions
 
       - name: Run tests
         run: |
           . .venv/bin/activate
-          pytest tests/ -v --tb=short || true
+          pytest tests/ -v --tb=short
