@@ -1,130 +1,89 @@
-"""
-Path parameter convertors for route parsing
-"""
+from __future__ import annotations
 
-import re
-import typing
+import math
 import uuid
-from typing import Any, Dict, Type
+from typing import Any, ClassVar, Generic, TypeVar
+
+T = TypeVar("T")
 
 
-class Convertor:
-    """Base class for path parameter convertors."""
+class Convertor(Generic[T]):
+    regex: ClassVar[str] = ""
 
-    regex = ""
+    def convert(self, value: str) -> T:
+        raise NotImplementedError()  # pragma: no cover
 
-    def convert(self, value: str) -> Any:
-        """Convert string value to appropriate type."""
-        raise NotImplementedError  # pragma: no cover
-
-    def to_string(self, value: Any) -> str:
-        """Convert value back to string for URL generation."""
-        return str(value)
+    def to_string(self, value: T) -> str:
+        raise NotImplementedError()  # pragma: no cover
 
 
-class StringConvertor(Convertor):
-    """String convertor (default)."""
-
+class StringConvertor(Convertor[str]):
     regex = "[^/]+"
 
     def convert(self, value: str) -> str:
         return value
 
-    def to_string(self, value: Any) -> str:
+    def to_string(self, value: str) -> str:
         value = str(value)
         assert "/" not in value, "May not contain path separators"
         assert value, "Must not be empty"
         return value
 
 
-class PathConvertor(Convertor):
-    """Path convertor (allows forward slashes)."""
-
+class PathConvertor(Convertor[str]):
     regex = ".*"
 
     def convert(self, value: str) -> str:
-        return value
+        return str(value)
 
-    def to_string(self, value: Any) -> str:
+    def to_string(self, value: str) -> str:
         return str(value)
 
 
-class IntegerConvertor(Convertor):
-    """Integer convertor."""
-
-    regex = r"-?\d+"
+class IntegerConvertor(Convertor[int]):
+    regex = "[0-9]+"
 
     def convert(self, value: str) -> int:
         return int(value)
 
-    def to_string(self, value: Any) -> str:
+    def to_string(self, value: int) -> str:
         value = int(value)
+        assert value >= 0, "Negative integers are not supported"
         return str(value)
 
 
-class FloatConvertor(Convertor):
-    """Float convertor."""
-
-    regex = r"-?\d+(\.\d+)?"
+class FloatConvertor(Convertor[float]):
+    regex = r"[0-9]+(\.[0-9]+)?"
 
     def convert(self, value: str) -> float:
         return float(value)
 
-    def to_string(self, value: Any) -> str:
+    def to_string(self, value: float) -> str:
         value = float(value)
-        return str(value)
+        assert value >= 0.0, "Negative floats are not supported"
+        assert not math.isnan(value), "NaN values are not supported"
+        assert not math.isinf(value), "Infinite values are not supported"
+        return ("%0.20f" % value).rstrip("0").rstrip(".")
 
 
-class UUIDConvertor(Convertor):
-    """UUID convertor."""
-
-    regex = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+class UUIDConvertor(Convertor[uuid.UUID]):
+    regex = "[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}"
 
     def convert(self, value: str) -> uuid.UUID:
         return uuid.UUID(value)
 
-    def to_string(self, value: Any) -> str:
+    def to_string(self, value: uuid.UUID) -> str:
         return str(value)
 
 
-class SlugConvertor(Convertor):
-    """Slug convertor (alphanumeric + hyphens/underscores)."""
-
-    regex = r"[-a-zA-Z0-9_]+"
-
-    def convert(self, value: str) -> str:
-        return value
-
-    def to_string(self, value: Any) -> str:
-        value = str(value)
-        assert re.match(r"^[-a-zA-Z0-9_]+$", value), (
-            "Must be alphanumeric with hyphens/underscores"
-        )
-        return value
-
-
-# Registry of available convertors
-CONVERTORS: Dict[str, Type[Convertor]] = {
-    "str": StringConvertor,
-    "string": StringConvertor,
-    "path": PathConvertor,
-    "int": IntegerConvertor,
-    "integer": IntegerConvertor,
-    "float": FloatConvertor,
-    "uuid": UUIDConvertor,
-    "slug": SlugConvertor,
+CONVERTOR_TYPES: dict[str, Convertor[Any]] = {
+    "str": StringConvertor(),
+    "path": PathConvertor(),
+    "int": IntegerConvertor(),
+    "float": FloatConvertor(),
+    "uuid": UUIDConvertor(),
 }
 
 
-def get_convertor(convertor_type: str) -> Convertor:
-    """Get a convertor instance by type name."""
-    if convertor_type not in CONVERTORS:
-        raise ValueError(f"Unknown convertor type: {convertor_type}")
-
-    convertor_class = CONVERTORS[convertor_type]
-    return convertor_class()
-
-
-def register_convertor(name: str, convertor_class: Type[Convertor]) -> None:
-    """Register a custom convertor."""
-    CONVERTORS[name] = convertor_class
+def register_url_convertor(key: str, convertor: Convertor[Any]) -> None:
+    CONVERTOR_TYPES[key] = convertor
