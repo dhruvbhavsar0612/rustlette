@@ -64,7 +64,7 @@ Repository = "https://github.com/yourusername/rustlette"
 Changelog = "https://github.com/yourusername/rustlette/releases"
 
 [tool.maturin]
-python-source = "python"
+python-source = "."
 module-name = "rustlette._rustlette_core"
 features = ["pyo3/extension-module"]
 bindings = "pyo3"
