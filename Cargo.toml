@@ -38,7 +38,7 @@ version = "1.6"
 features = ["v4", "serde"]
 
 [build-dependencies]
-pyo3-build-config = "0.20"
+pyo3-build-config = "0.28"
 
 [profile.release]
 lto = true
