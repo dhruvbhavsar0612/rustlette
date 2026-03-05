@@ -10,10 +10,82 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
 jobs:
-  build:
-    name: Build & Test
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Ruff check
+        run: ruff check rustlette/ tests/
+
+      - name: Ruff format check
+        run: ruff format --check rustlette/ tests/
+
+  test:
+    name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        os: [ubuntu-latest]
+        include:
+          - python-version: "3.12"
+            os: macos-latest
+          - python-version: "3.12"
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install maturin and build
+        run: |
+          pip install maturin
+          maturin develop
+
+      - name: Install test dependencies
+        run: pip install ".[test,full]"
+
+      - name: Run tests
+        run: pytest --tb=short -q
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    needs: [lint]
     steps:
       - uses: actions/checkout@v4
 
@@ -36,19 +108,22 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Build with maturin
+      - name: Install maturin and build
         run: |
-          python -m venv .venv
-          . .venv/bin/activate
           pip install maturin
           maturin develop
 
       - name: Install test dependencies
-        run: |
-          . .venv/bin/activate
-          pip install pytest "pytest-asyncio>=0.23" httpx anyio python-multipart itsdangerous typing-extensions
+        run: pip install ".[test,full]"
 
-      - name: Run tests
-        run: |
-          . .venv/bin/activate
-          pytest tests/ -v --tb=short
+      - name: Run tests with coverage
+        run: pytest --cov=rustlette --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage to Codecov
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage.xml
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
